@@ -1,43 +1,36 @@
-import sqlite3
+import os
 
-conn = sqlite3.connect(r"app.db", check_same_thread=False)
+from dotenv import load_dotenv
+from pymongo import MongoClient
 
-conn.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    email TEXT NOT NULL UNIQUE,
-    hashed_password TEXT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT 0
-)
-""")
+load_dotenv()
 
-conn.commit()
+client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017/"))
+db = client.todo_db
+users = db.users
+users.create_index("username", unique=True)
+users.create_index("email", unique=True)
 
 
-def get_user_by_username(username: str) -> tuple[int, str, str, str, int]:
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-    user = cursor.fetchone()
-    return user
+def get_user_by_username(username: str):
+    return users.find_one({"username": username})
 
 
-def get_user_by_email(email: str) -> tuple[int, str, str, str, int]:
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
-    user = cursor.fetchone()
-    return user
+def get_user_by_email(email: str):
+    return users.find_one({"email": email})
 
 
 def add_user(username, email, hashed_password):
-    conn.execute(
-        "INSERT INTO users (username, email, hashed_password, is_active) VALUES (?, ?, ?, ?)",
-        (username, email, hashed_password, False),
+    users.insert_one(
+        dict(
+            username=username,
+            email=email,
+            hashed_password=hashed_password,
+            is_active=False,
+            todo=dict(),
+        )
     )
-    conn.commit()
 
 
 def activate_user(email):
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET is_active = 1 WHERE email = ?", (email,))
-    conn.commit()
+    users.update_one({"email": email}, {"$set": {"is_active": True}})

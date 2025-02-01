@@ -20,12 +20,15 @@ load_dotenv()
 MAIL = os.getenv("MAIL")
 MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
 
-if not MAIL or not MAIL_PASSWORD or not SMTP_SERVER:
-    raise Exception(f"SET ALL .env variables, {MAIL=}, {MAIL_PASSWORD=}, {SMTP_SERVER=}")
+if not all((MAIL, MAIL_PASSWORD, SMTP_SERVER, SECRET_KEY, ALGORITHM)):
+    raise Exception(
+        f"SET ALL .env variables, {MAIL=}, {MAIL_PASSWORD=}, "
+        f"{SMTP_SERVER=}, {SECRET_KEY=}, {ALGORITHM=}"
+    )
 
-SECRET_KEY = "your-secret-key"
-ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -63,9 +66,9 @@ def decode_token(token: str):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def authenticate_user(username: str, password: str) -> tuple[int, str, str, str, int] | bool:
+def authenticate_user(username: str, password: str) -> dict | bool:
     user = get_user_by_username(username)
-    if not user or not verify_password(password, user[3]):
+    if not user or not verify_password(password, user["hashed_password"]):
         return False
     return user
 
@@ -101,14 +104,14 @@ async def confirm_email(token: str):
 @app.post("/token", response_model=Token)
 async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
-    if not user or not verify_password(form_data.password, user[3]):
+    if not user or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
-    if not user[-1]:
+    if not user["is_active"]:
         raise HTTPException(status_code=400, detail="Account not activated")
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user[1]}, expires_delta=access_token_expires
+        data={"sub": user["username"]}, expires_delta=access_token_expires
     )
     response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
     return {"access_token": access_token, "token_type": "bearer"}
@@ -124,7 +127,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
 @app.get("/users/me")
 async def read_users_me(current_user: User = Depends(get_current_user)):
-    return current_user
+    return {"username": current_user["username"]}
 
 
 @app.post("/register")
