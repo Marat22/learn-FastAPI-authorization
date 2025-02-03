@@ -4,15 +4,18 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from typing import Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Response
+from fastapi import Form
+from fastapi import Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import EmailStr
+from starlette.responses import HTMLResponse
 
-from app.database import get_user_by_username, get_user_by_email, add_user, activate_user
+from app.database import get_user_by_username, get_user_by_email, add_user, activate_user, update_password
 from app.models import Token, User
-from dotenv import load_dotenv
 
 app = FastAPI()
 
@@ -138,11 +141,92 @@ async def register(username: str, email: EmailStr, password: str):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed_password = get_password_hash(password)
-
     add_user(username, email, hashed_password)
-
     confirmation_token = create_confirmation_token(email)
-
     send_confirmation_email(email, confirmation_token)
 
     return {"message": "User registered. Please check your email to confirm your account."}
+
+
+@app.post("/forgot-password")
+async def forgot_password(request: Request, email: EmailStr):
+    user = get_user_by_email(email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    reset_token = create_password_reset_token(email)
+
+    # Use your actual frontend URL here
+    reset_url = f"{request.base_url}reset-password?token={reset_token}"
+
+    send_update_password_email(email, reset_url)
+    return {"message": "Password reset link sent to your email"}
+
+
+def create_password_reset_token(email: EmailStr):
+    expires_delta = timedelta(minutes=15)
+    return create_access_token(
+        data={"sub": email, "type": "password_reset"},  # Add type distinction
+        expires_delta=expires_delta
+    )
+
+
+@app.post("/reset-password")
+async def reset_password(
+        token: str = Form(...),
+        new_password: str = Form(...)
+):
+    email = verify_password_reset_token(token)
+    user = get_user_by_email(email)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update password in database
+    update_password(email, get_password_hash(new_password))
+
+    return {"message": "Password updated successfully"}
+
+
+@app.get("/reset-password")
+async def show_reset_form(token: str):
+    # Verify token first
+    try:
+        email = verify_password_reset_token(token)
+        return HTMLResponse(f"""
+            <form action="/reset-password" method="post">
+                <input type="hidden" name="token" value="{token}">
+                <input type="password" name="new_password" required>
+                <button type="submit">Reset Password</button>
+            </form>
+        """)
+    except HTTPException:
+        return HTMLResponse("Invalid or expired token")
+
+
+def verify_password_reset_token(token: str) -> str:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        token_type: str = payload.get("type")
+
+        if not email or token_type != "password_reset":
+            raise HTTPException(status_code=400, detail="Invalid token type")
+
+        return email
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+def send_update_password_email(email: EmailStr, reset_url: str):
+    msg = MIMEText(f"""Click the link to reset your password: {reset_url}
+
+    This link will expire in 15 minutes.""")
+
+    msg["Subject"] = "Password Reset Request"
+    msg["From"] = MAIL
+    msg["To"] = email
+
+    with smtplib.SMTP_SSL(SMTP_SERVER, 465) as server:
+        server.login(MAIL.split("@")[0], MAIL_PASSWORD)
+        server.sendmail(MAIL, [str(email)], msg.as_string())

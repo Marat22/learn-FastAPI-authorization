@@ -34,3 +34,7 @@ def add_user(username, email, hashed_password):
 
 def activate_user(email):
     users.update_one({"email": email}, {"$set": {"is_active": True}})
+
+
+def update_password(email, password):
+    users.update_one({"email": email}, {"$set": {"hashed_password": password}})
