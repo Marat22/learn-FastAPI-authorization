@@ -20,13 +20,13 @@ auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 @auth_router.post("/register")
 async def register(request: Request, username: str, email: EmailStr, password: str):
-    if get_user_by_username(username):
+    if await get_user_by_username(username):
         raise HTTPException(status_code=400, detail="Username already registered")
-    if get_user_by_email(email):
+    if await get_user_by_email(email):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed_password = get_password_hash(password)
-    add_user(username, email, hashed_password)
+    await add_user(username, email, hashed_password)
     confirmation_token = create_confirmation_token(email)
     send_confirmation_email(email, f"{request.base_url}auth/confirm?token={confirmation_token}")
 
@@ -36,18 +36,18 @@ async def register(request: Request, username: str, email: EmailStr, password: s
 @auth_router.get("/confirm")
 async def confirm_email(token: str):
     email = decode_token(token)
-    user = get_user_by_email(email)
+    user = await get_user_by_email(email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    activate_user(email)
+    await activate_user(email)
 
     return {"message": "Email confirmed"}
 
 
 @auth_router.post("/token", response_model=Token)
 async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
-    user = authenticate_user(form_data.username, form_data.password)
+    user = await authenticate_user(form_data.username, form_data.password)
     if not user or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     if not user["is_active"]:
@@ -63,7 +63,7 @@ async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depen
 
 @auth_router.post("/forgot-password")
 async def forgot_password(request: Request, email: EmailStr):
-    user = get_user_by_email(email)
+    user = await get_user_by_email(email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -82,19 +82,19 @@ async def reset_password(
         new_password: str = Form(...)
 ):
     email = verify_password_reset_token(token)
-    user = get_user_by_email(email)
+    user = await get_user_by_email(email)
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Update password in database
-    update_password(email, get_password_hash(new_password))
+    await update_password(email, get_password_hash(new_password))
 
     return {"message": "Password updated successfully"}
 
 
 @auth_router.get("/reset-password")
-async def show_reset_form(token: str):
+def show_reset_form(token: str):
     # Verify token first
     try:
         verify_password_reset_token(token)

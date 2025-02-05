@@ -39,8 +39,8 @@ def decode_token(token: str):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def authenticate_user(username: str, password: str) -> dict | bool:
-    user = get_user_by_username(username)
+async def authenticate_user(username: str, password: str) -> dict | bool:
+    user = await get_user_by_username(username)
     if not user or not verify_password(password, user["hashed_password"]):
         return False
     return user
