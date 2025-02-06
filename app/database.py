@@ -13,6 +13,7 @@ users = db.users
 async def on_init():  # fixme функция никогда не вызывается
     await users.create_index("username", unique=True)
     await users.create_index("email", unique=True)
+    await users.create_index("title", unique=False)
 
 
 async def get_user_by_username(username: str):
