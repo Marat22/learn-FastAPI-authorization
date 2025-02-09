@@ -19,7 +19,7 @@ async def create_group(
 
 
 @tasks_router.get("/",
-                  # response_model=list[models.TaskGroupOut]
+                  response_model=list[models.GetTaskGroup]
                   )
 async def get_task_groups(user=Depends(get_current_user)):
     return user["todo"]
