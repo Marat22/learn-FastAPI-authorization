@@ -30,7 +30,7 @@ async def add_user(username, email, hashed_password):
             email=email,
             hashed_password=hashed_password,
             is_active=False,
-            todo=dict(),
+            todo=[],
         )
     )
 
