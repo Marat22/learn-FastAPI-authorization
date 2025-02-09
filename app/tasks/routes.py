@@ -35,8 +35,17 @@ async def get_group(
     group = crud.get_task_group(user, group_name)
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
-    print(dict(group))
     return group
+
+
+@tasks_router.put("/{group_name}", response_model=dict)
+async def rename_group(group_name: str, new_group_name: str, user = Depends(get_current_user)):
+    return await crud.rename_task_group(user, group_name, new_group_name)
+
+
+# @tasks_router.get("/{group_name}")
+# async def get_group_name(group_name: str, user=Depends(get_current_user)):
+#     crud.
 
 
 # @tasks_router.put("/{group_name}",
@@ -55,16 +64,13 @@ async def get_group(
 #     return updated_group
 #
 #
-# @tasks_router.delete("/{group_id}")
-# async def delete_group(
-#         group_id: str,
-#         user=Depends(get_current_user)
-# ):
-#     db_user = users.find_one({"username": user["username"]})
-#     success = await crud.delete_task_group(db_user, group_id)
-#     if not success:
-#         raise HTTPException(status_code=404, detail="Group not found")
-#     return {"message": "Group deleted successfully"}
+@tasks_router.delete("/{group_name}")
+async def delete_group(
+        group_name: str,
+        user=Depends(get_current_user)
+):
+    result = await crud.delete_task_group(user, group_name)
+    return result
 #
 #
 # @tasks_router.post("/{group_id}/tasks", response_model=models.TaskOut)
