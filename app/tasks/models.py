@@ -75,7 +75,6 @@ class GetTaskGroup(BaseModel):
     tasks: List[TaskOut]
 
 
-
 class TaskGroupCreate(BaseModel):
     title: str
 

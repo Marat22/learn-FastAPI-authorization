@@ -8,6 +8,7 @@ from fastapi.exceptions import HTTPException
 
 from app.database import users
 
+from pymongo.results import UpdateResult
 
 # Helper functions
 # async def get_todo_structure(user) -> :
@@ -25,52 +26,46 @@ async def create_task_group(user: dict[str, Any], group_name: str):
     Creates a new task group with auto-incremented order_num.
     Returns MongoDB UpdateResult.
     """
-    if get_task_group(user, group_name) is not None:
-        raise HTTPException(status_code=409, detail=f"{group_name} already exists.")
+    # Validate input
+    if not group_name or not isinstance(group_name, str):
+        raise HTTPException(status_code=400, detail="Group name must be a non-empty string")
 
+    # Check if group already exists
+    if get_task_group(user, group_name) is not None:
+        raise HTTPException(status_code=409, detail=f"Task group '{group_name}' already exists")
+
+    # Generate new ObjectId for the task group
     new_group_id = ObjectId()
 
-    # Correct aggregation pipeline for update
-    pipeline = [
+    # Step 1: Find the current maximum order_num
+    user_doc = await users.find_one({"_id": user["_id"]}, {"todo.order_num": 1})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Calculate the new order_num
+    max_order_num = max([t.get("order_num", 0) for t in user_doc.get("todo", [])] or [0])
+    new_order_num = max_order_num + 1
+
+    # Step 2: Add the new task group using $push
+    result: UpdateResult = await users.update_one(
+        {"_id": user["_id"]},
         {
-            "$set": {
-                "new_order": {
-                    "$add": [
-                        {"$ifNull": [{"$max": "$todo.order_num"}, 0]},
-                        1
-                    ]
-                }
-            }
-        },
-        {
-            "$set": {
+            "$push": {
                 "todo": {
-                    "$concatArrays": [
-                        "$todo",
-                        [{
-                            "_id": new_group_id,
-                            "title": group_name,
-                            "order_num": "$new_order",
-                            "tasks": []
-                        }]
-                    ]
+                    "_id": new_group_id,
+                    "title": group_name,
+                    "order_num": new_order_num,
+                    "tasks": []
                 }
             }
         }
-    ]
-
-    result = await users.update_one(
-        {"_id": user["_id"]},
-        pipeline
     )
 
-    return {"Result": "success"}
-    # await users.update_one(
-    #     {"_id": user["_id"]},
-    #     {"$set": {f"todo.{group_name}": {}}}
-    # )
-    # return {group_name: {}}
-
+    # Check if the update was successful
+    if result.modified_count == 1:
+        return {"Result": "success", "task_group_id": str(new_group_id)}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create task group")
 
 def get_task_group(user, group_name):
     return next(
