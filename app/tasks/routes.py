@@ -71,6 +71,13 @@ async def delete_group(
 ):
     result = await crud.delete_task_group(user, group_name)
     return result
+
+
+@tasks_router.post("/{group_name}/{task_name}")
+async def create_task(group_name: str, task_name: str, description: str="", user=Depends(get_current_user)):
+    return await crud.create_task(user, group_name, task_name, description)
+
+
 #
 #
 # @tasks_router.post("/{group_id}/tasks", response_model=models.TaskOut)

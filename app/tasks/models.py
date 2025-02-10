@@ -1,7 +1,6 @@
-from datetime import datetime
 from typing import Annotated
 from typing import Any
-from typing import Optional, List
+from typing import List
 
 from bson import ObjectId
 from pydantic import BaseModel, Field
@@ -42,27 +41,27 @@ class ObjectIdPydanticAnnotation:
         return handler(core_schema.str_schema())
 
 
-class TaskBase(BaseModel):
+# class TaskBase(BaseModel):
+#     title: str
+#     description: Optional[str] = None
+    # status: str = "pending"
+
+
+# class TaskUpdate(TaskBase):
+#     pass
+
+
+class Task(BaseModel):
+    id: Annotated[ObjectId, ObjectIdPydanticAnnotation] | None = Field(
+        default=None,
+        alias="_id",
+    )
     title: str
-    description: Optional[str] = None
-    status: str = "pending"
+    description: str
+    order_num: int
 
-
-class TaskCreate(TaskBase):
-    pass
-
-
-class TaskUpdate(TaskBase):
-    pass
-
-
-class TaskOut(TaskBase):
-    task_id: str = Field(..., alias="_id")
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        allow_population_by_field_name = True
+    # class Config:
+    #     allow_population_by_field_name = True
 
 
 class GetTaskGroup(BaseModel):
@@ -72,11 +71,15 @@ class GetTaskGroup(BaseModel):
     )
     title: str
     order_num: int
-    tasks: List[TaskOut]
+    tasks: List[Task]
 
 
 class TaskGroupCreate(BaseModel):
     title: str
+
+
+class TaskCreate(BaseModel):
+    description: str = ""
 
 
 # class TaskGroupUpdate(TaskGroupBase):

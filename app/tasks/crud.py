@@ -1,4 +1,3 @@
-# app/tasks/crud.py
 from typing import Any, Dict
 
 from bson import ObjectId
@@ -55,6 +54,12 @@ async def create_task_group(user: dict[str, Any], group_name: str):
         return {"Result": "success", "task_group_id": str(new_group_id)}
     else:
         raise HTTPException(status_code=500, detail="Failed to create task group")
+
+
+def get_task(task_group: dict[str, Any], task_name: str) -> dict[str, Any]:
+    return next(
+        (t for t in task_group["tasks"] if t["title"] == task_name), None
+    )
 
 def get_task_group(user, group_name):
     return next(
@@ -192,23 +197,42 @@ async def rename_task_group(user: dict[str, Any], old_group_name: str, new_group
         raise HTTPException(status_code=500,
                             detail=f"Database error: {str(e)}")
 
-# async def create_task(user, group_id, task_data):
-#     task_id = str(uuid.uuid4())
-#     new_task = {
-#         "_id": task_id,
-#         "created_at": datetime.now(),
-#         "updated_at": datetime.now(),
-#         **task_data.dict()
-#     }
-#
-#     result = await  users.update_one(
-#         {"_id": user["_id"], "todo.task_groups._id": group_id},
-#         {"$push": {"todo.task_groups.$.tasks": new_task}}
-#     )
-#     if result.modified_count == 0:
-#         return None
-#     return new_task
 
+async def create_task(user: dict[str, Any], group_name: str, task_name: str, description: str) -> Dict[str, str]:
+    if not task_name or not isinstance(task_name, str):
+        raise HTTPException(status_code=400, detail="Task name must be a non-empty string")
+
+    group = get_task_group(user, group_name)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    # Check if task already exists
+    if get_task(group, task_name) is not None:
+        raise HTTPException(status_code=409, detail=f"Task group '{group_name}' already exists")
+
+    new_task_id = ObjectId()
+
+    new_order_num = max(t["order_num"] for t in group["tasks"]) + 1 if group["tasks"] else 1
+
+    result: UpdateResult = await users.update_one(
+        {"_id": user["_id"], "todo.title": group_name},
+        {
+            "$push": {
+                "todo.$.tasks": {
+                    "_id": new_task_id,
+                    "title": group_name,
+                    "description": description,
+                    "order_num": new_order_num,
+                }
+            }
+        }
+    )
+
+    # Check if the update was successful
+    if result.modified_count == 1:
+        return {"Result": "success", "task_id": str(new_task_id)}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create task")
 
 # async def get_task(user, group_id, task_id):
 #     group = await get_task_group(user, group_id)
