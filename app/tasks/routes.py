@@ -10,8 +10,8 @@ tasks_router = APIRouter(prefix="/task-groups", tags=["tasks"])
                    # response_model=models.TaskGroupCreate
                    )
 async def create_group(
-    group_name: str,
-    user=Depends(get_current_user)
+        group_name: str,
+        user=Depends(get_current_user)
 ):
     new_group = await crud.create_task_group(user, group_name)
     return new_group
@@ -39,7 +39,7 @@ async def get_group(
 
 
 @tasks_router.put("/{group_name}", response_model=dict)
-async def rename_group(group_name: str, new_group_name: str, user = Depends(get_current_user)):
+async def rename_group(group_name: str, new_group_name: str, user=Depends(get_current_user)):
     return await crud.rename_task_group(user, group_name, new_group_name)
 
 
@@ -74,12 +74,17 @@ async def delete_group(
 
 
 @tasks_router.post("/{group_name}/{task_name}")
-async def create_task(group_name: str, task_name: str, description: str="", user=Depends(get_current_user)):
+async def create_task(group_name: str, task_name: str, description: str = "", user=Depends(get_current_user)):
     return await crud.create_task(user, group_name, task_name, description)
 
 
-#
-#
+@tasks_router.get("/{group_name}/{task_name}", response_model=models.Task)
+def get_task(group_name: str, task_name: str, user=Depends(get_current_user)):
+    task_group = crud.get_task_group(user, group_name)
+    return crud.get_task(task_group, task_name)
+
+
+
 # @tasks_router.post("/{group_id}/tasks", response_model=models.TaskOut)
 # async def create_task(
 #         group_id: str,
@@ -91,7 +96,7 @@ async def create_task(group_name: str, task_name: str, description: str="", user
 #     if not new_task:
 #         raise HTTPException(status_code=404, detail="Group not found")
 #     return new_task
-#
+
 #
 # @tasks_router.put("/{group_id}/tasks/{task_id}", response_model=models.TaskOut)
 # async def update_task(

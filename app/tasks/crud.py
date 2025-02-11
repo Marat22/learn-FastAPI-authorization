@@ -61,6 +61,7 @@ def get_task(task_group: dict[str, Any], task_name: str) -> dict[str, Any]:
         (t for t in task_group["tasks"] if t["title"] == task_name), None
     )
 
+
 def get_task_group(user, group_name):
     return next(
         (g for g in user["todo"] if g["title"] == group_name),
