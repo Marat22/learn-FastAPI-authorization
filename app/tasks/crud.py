@@ -2,10 +2,9 @@ from typing import Any, Dict
 
 from bson import ObjectId
 from fastapi.exceptions import HTTPException
+from pymongo.results import UpdateResult
 
 from app.database import users
-
-from pymongo.results import UpdateResult
 
 
 # Task Group CRUD
@@ -221,7 +220,7 @@ async def create_task(user: dict[str, Any], group_name: str, task_name: str, des
             "$push": {
                 "todo.$.tasks": {
                     "_id": new_task_id,
-                    "title": group_name,
+                    "title": task_name,
                     "description": description,
                     "order_num": new_order_num,
                 }
@@ -234,6 +233,107 @@ async def create_task(user: dict[str, Any], group_name: str, task_name: str, des
         return {"Result": "success", "task_id": str(new_task_id)}
     else:
         raise HTTPException(status_code=500, detail="Failed to create task")
+
+
+async def delete_task(user: dict[str, Any], group_name: str, task_name: str) -> Dict[str, str]:
+    task_group = get_task_group(user, group_name)
+    if task_group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    task_to_delete = get_task(task_group, task_name)
+    if task_to_delete is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    pipeline = [
+        {
+            "$set": {
+                "todo": {
+                    "$map": {
+                        "input": "$todo",
+                        "as": "group",
+                        "in": {
+                            "$cond": [
+                                {"$eq": ["$$group.title", group_name]},
+                                {
+                                    "$mergeObjects": [
+                                        "$$group",
+                                        {
+                                            "tasks": {
+                                                "$let": {
+                                                    "vars": {
+                                                        "deletedTask": {
+                                                            "$arrayElemAt": [
+                                                                {
+                                                                    "$filter": {
+                                                                        "input": "$$group.tasks",
+                                                                        "as": "task",
+                                                                        "cond": {"$eq": ["$$task.title", task_name]}
+                                                                    }
+                                                                },
+                                                                0
+                                                            ]
+                                                        },
+                                                        "remainingTasks": {
+                                                            "$filter": {
+                                                                "input": "$$group.tasks",
+                                                                "as": "task",
+                                                                "cond": {"$ne": ["$$task.title", task_name]}
+                                                            }
+                                                        }
+                                                    },
+                                                    "in": {
+                                                        "$map": {
+                                                            "input": "$$remainingTasks",
+                                                            "as": "t",
+                                                            "in": {
+                                                                "$mergeObjects": [
+                                                                    "$$t",
+                                                                    {
+                                                                        "order_num": {
+                                                                            "$cond": [
+                                                                                {"$gt": ["$$t.order_num",
+                                                                                         "$$deletedTask.order_num"]},
+                                                                                {"$subtract": ["$$t.order_num", 1]},
+                                                                                "$$t.order_num"
+                                                                            ]
+                                                                        }
+                                                                    }
+                                                                ]
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                },
+                                "$$group"  # Leave other groups unchanged
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    ]
+    result = await users.update_one(
+        {"_id": user["_id"]},
+        pipeline
+    )
+
+    if result.modified_count == 1:
+        return {"Result": "success"}
+
+    else:
+        raise HTTPException(status_code=500, detail="Failed to delete task")
+
+    # checks
+    # check group exists
+
+    # remove task
+    # if modified_count != 0 then raise exception
+
+    # update order nums of upper tasks
+
 
 # async def get_task(user, group_id, task_id):
 #     group = await get_task_group(user, group_id)
