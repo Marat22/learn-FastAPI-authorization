@@ -13,6 +13,7 @@ async def create_group(
         group_name: str,
         user=Depends(get_current_user)
 ):
+    """Creates group of tasks."""
     new_group = await crud.create_task_group(user, group_name)
     return new_group
     # return TaskGroupOut(group_name=group_name, tasks=new_group[group_name], )
@@ -22,6 +23,7 @@ async def create_group(
                   response_model=list[models.GetTaskGroup]
                   )
 async def get_task_groups(user=Depends(get_current_user)):
+    """Returns all groups of tasks."""
     return user["todo"]
 
 
@@ -32,6 +34,7 @@ async def get_group(
         group_name: str,
         user=Depends(get_current_user)
 ):
+    """Returns needed group of tasks by its title (`group_name`)."""
     group = crud.get_task_group(user, group_name)
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -40,6 +43,7 @@ async def get_group(
 
 @tasks_router.put("/{group_name}", response_model=dict)
 async def rename_group(group_name: str, new_group_name: str, user=Depends(get_current_user)):
+    """Replaces current title of group of tasks (`group_name`) with new group name (`new_group_name`)."""
     return await crud.rename_task_group(user, group_name, new_group_name)
 
 

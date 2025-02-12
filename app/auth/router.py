@@ -20,6 +20,7 @@ auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 @auth_router.post("/register")
 async def register(request: Request, username: str, email: EmailStr, password: str):
+    """Registers the user."""
     if await get_user_by_username(username):
         raise HTTPException(status_code=400, detail="Username already registered")
     if await get_user_by_email(email):
@@ -35,6 +36,7 @@ async def register(request: Request, username: str, email: EmailStr, password: s
 
 @auth_router.get("/confirm")
 async def confirm_email(token: str):
+    """Confirms e-mail during registration."""
     email = decode_token(token)
     user = await get_user_by_email(email)
     if not user:
@@ -47,6 +49,7 @@ async def confirm_email(token: str):
 
 @auth_router.post("/token", response_model=Token)
 async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
+    """Verifies password and set access token to cookies."""
     user = await authenticate_user(form_data.username, form_data.password)
     if not user or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
@@ -63,6 +66,7 @@ async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depen
 
 @auth_router.post("/forgot-password")
 async def forgot_password(request: Request, email: EmailStr):
+    """Sends url to `email` to reset the password."""
     user = await get_user_by_email(email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -81,6 +85,7 @@ async def reset_password(
         token: str = Form(...),
         new_password: str = Form(...)
 ):
+    """Sets the password to `new_password`."""
     email = verify_password_reset_token(token)
     user = await get_user_by_email(email)
 
@@ -95,6 +100,7 @@ async def reset_password(
 
 @auth_router.get("/reset-password")
 def show_reset_form(token: str):
+    """Returns html page to restore password."""
     # Verify token first
     try:
         verify_password_reset_token(token)
