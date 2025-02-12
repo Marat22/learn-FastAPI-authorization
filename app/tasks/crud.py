@@ -1,9 +1,11 @@
+import asyncio
+from pprint import pprint
 from typing import Any, Dict
 
 from bson import ObjectId
 from fastapi.exceptions import HTTPException
 
-from app.database import users
+from app.database import users, on_init
 
 from pymongo.results import UpdateResult
 
@@ -221,7 +223,7 @@ async def create_task(user: dict[str, Any], group_name: str, task_name: str, des
             "$push": {
                 "todo.$.tasks": {
                     "_id": new_task_id,
-                    "title": group_name,
+                    "title": task_name,
                     "description": description,
                     "order_num": new_order_num,
                 }
@@ -234,6 +236,71 @@ async def create_task(user: dict[str, Any], group_name: str, task_name: str, des
         return {"Result": "success", "task_id": str(new_task_id)}
     else:
         raise HTTPException(status_code=500, detail="Failed to create task")
+
+
+async def delete_task(user: dict[str, Any], group_name: str, task_name: str) -> Dict[str, str]:
+    task_group = get_task_group(user, group_name)
+    if task_group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    task_to_delete = get_task(task_group, task_name)
+    if task_to_delete is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    delete_result = await users.update_one(
+        {"_id": ObjectId("67a3d2c410c3b825abd131d8"),
+         "todo.title": group_name,
+         },
+        {
+            "$pull": {"todo.$.tasks": {"title": task_name}}
+        }
+    )
+
+    if delete_result.modified_count != 1:
+        raise HTTPException(status_code=404, detail="Task not deleted")
+
+    update_result = await users.update_one(
+        {
+            "_id": user["_id"],
+            "todo.title": group_name,
+        },
+        [{
+            "$set": {
+                "todo.$.tasks": {
+                    "$map": {
+                        "input": "$todo.$.tasks",
+                        "as": "task",
+                        "in": {
+                            "$mergeObjects": [
+                                "$$task",
+                                {
+                                    "order_num": {
+                                        "$cond": {
+                                            "if": {"$gt": ["$$task.order_num", task_to_delete["order_num"]]},
+                                            "then": {"$subtract": ["$$task.order_num", 1]},
+                                            "else": "$$task.order_num"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }]
+    )
+
+    if update_result.modified_count == 1:
+        return {"Result": "success"}
+
+    # checks
+    # check group exists
+
+    # remove task
+    # if modified_count != 0 then raise exception
+
+    # update order nums of upper tasks
+
 
 # async def get_task(user, group_id, task_id):
 #     group = await get_task_group(user, group_id)
@@ -266,3 +333,62 @@ async def create_task(user: dict[str, Any], group_name: str, task_name: str, des
 #         {"$pull": {"todo.task_groups.$.tasks": {"_id": task_id}}}
 #     )
 #     return result.modified_count > 0
+
+
+if __name__ == '__main__':
+    async def m():
+        o_num = 0
+        pprint(await users.update_one(
+            {
+                "_id": ObjectId("67a3d2c410c3b825abd131d8"),
+                "todo.title": "grou1",
+            },
+            [{
+                "$set": {
+                    "todo.tasks": {
+                        "$map": {
+                            "input": "$todo.tasks",
+                            "as": "task",
+                            "in": {
+                                "$mergeObjects": [
+                                    "$$task",
+                                    {
+                                        "order_num": {
+                                            "$cond": {
+                                                "if": {"$gt": ["$$task.order_num", o_num]},
+                                                "then": {"$subtract": ["$$task.order_num", 1]},
+                                                "else": "$$task.order_num"
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }]
+        ))
+        # pprint(
+        #     await users.find(
+        #         {
+        #             "_id": ObjectId("67a3d2c410c3b825abd131d8"),
+        #             "todo.title": "grou1",
+        #             "todo.tasks.title": "grou1",
+        #         },
+        #         {
+        #             {"todo": 1}
+        #         }
+        #     )
+        # )
+
+        # pprint(await users.update_one(
+        #     {"_id": ObjectId("67a3d2c410c3b825abd131d8"),
+        #      "todo.title": "grou1",
+        #      },
+        #     {
+        #         "$pull": {"todo.$.tasks": {"title": "grou1"}}
+        #     }
+        # ))
+
+
+    asyncio.run(m())

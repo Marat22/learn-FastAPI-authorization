@@ -73,21 +73,28 @@ async def delete_group(
         group_name: str,
         user=Depends(get_current_user)
 ):
+    """Deletes group of tasks by its title (`group_name`)."""
     result = await crud.delete_task_group(user, group_name)
     return result
 
 
 @tasks_router.post("/{group_name}/{task_name}")
 async def create_task(group_name: str, task_name: str, description: str = "", user=Depends(get_current_user)):
+    """Creates task with title `task_name` and `description` in group with `group_name` title."""
     return await crud.create_task(user, group_name, task_name, description)
 
 
 @tasks_router.get("/{group_name}/{task_name}", response_model=models.Task)
 def get_task(group_name: str, task_name: str, user=Depends(get_current_user)):
+    """Returns task with title `task_name` in group with `group_name` title."""
     task_group = crud.get_task_group(user, group_name)
     return crud.get_task(task_group, task_name)
 
 
+@tasks_router.delete("/{group_name}/{task_name}")
+async def delete_task(group_name: str, task_name: str, user=Depends(get_current_user)) :
+    """Deletes task with title `task_name` from group with `group_name` title."""
+    return await crud.delete_task(user, group_name, task_name)
 
 # @tasks_router.post("/{group_id}/tasks", response_model=models.TaskOut)
 # async def create_task(
