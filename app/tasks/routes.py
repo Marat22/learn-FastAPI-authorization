@@ -92,7 +92,7 @@ def get_task(group_name: str, task_name: str, user=Depends(get_current_user)):
 
 
 @tasks_router.delete("/{group_name}/{task_name}")
-async def delete_task(group_name: str, task_name: str, user=Depends(get_current_user)) :
+async def delete_task(group_name: str, task_name: str, user=Depends(get_current_user)):
     """Deletes task with title `task_name` from group with `group_name` title."""
     return await crud.delete_task(user, group_name, task_name)
 

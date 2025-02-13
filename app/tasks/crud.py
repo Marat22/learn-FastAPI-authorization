@@ -1,13 +1,10 @@
-import asyncio
-from pprint import pprint
 from typing import Any, Dict
 
 from bson import ObjectId
 from fastapi.exceptions import HTTPException
-
-from app.database import users, on_init
-
 from pymongo.results import UpdateResult
+
+from app.database import users
 
 
 # Task Group CRUD
@@ -247,51 +244,87 @@ async def delete_task(user: dict[str, Any], group_name: str, task_name: str) -> 
     if task_to_delete is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    delete_result = await users.update_one(
-        {"_id": ObjectId("67a3d2c410c3b825abd131d8"),
-         "todo.title": group_name,
-         },
+    pipeline = [
         {
-            "$pull": {"todo.$.tasks": {"title": task_name}}
-        }
-    )
-
-    if delete_result.modified_count != 1:
-        raise HTTPException(status_code=404, detail="Task not deleted")
-
-    update_result = await users.update_one(
-        {
-            "_id": user["_id"],
-            "todo.title": group_name,
-        },
-        [{
             "$set": {
-                "todo.$.tasks": {
+                "todo": {
                     "$map": {
-                        "input": "$todo.$.tasks",
-                        "as": "task",
+                        "input": "$todo",
+                        "as": "group",
                         "in": {
-                            "$mergeObjects": [
-                                "$$task",
+                            "$cond": [
+                                {"$eq": ["$$group.title", group_name]},
                                 {
-                                    "order_num": {
-                                        "$cond": {
-                                            "if": {"$gt": ["$$task.order_num", task_to_delete["order_num"]]},
-                                            "then": {"$subtract": ["$$task.order_num", 1]},
-                                            "else": "$$task.order_num"
+                                    "$mergeObjects": [
+                                        "$$group",
+                                        {
+                                            "tasks": {
+                                                "$let": {
+                                                    "vars": {
+                                                        "deletedTask": {
+                                                            "$arrayElemAt": [
+                                                                {
+                                                                    "$filter": {
+                                                                        "input": "$$group.tasks",
+                                                                        "as": "task",
+                                                                        "cond": {"$eq": ["$$task.title", task_name]}
+                                                                    }
+                                                                },
+                                                                0
+                                                            ]
+                                                        },
+                                                        "remainingTasks": {
+                                                            "$filter": {
+                                                                "input": "$$group.tasks",
+                                                                "as": "task",
+                                                                "cond": {"$ne": ["$$task.title", task_name]}
+                                                            }
+                                                        }
+                                                    },
+                                                    "in": {
+                                                        "$map": {
+                                                            "input": "$$remainingTasks",
+                                                            "as": "t",
+                                                            "in": {
+                                                                "$mergeObjects": [
+                                                                    "$$t",
+                                                                    {
+                                                                        "order_num": {
+                                                                            "$cond": [
+                                                                                {"$gt": ["$$t.order_num",
+                                                                                         "$$deletedTask.order_num"]},
+                                                                                {"$subtract": ["$$t.order_num", 1]},
+                                                                                "$$t.order_num"
+                                                                            ]
+                                                                        }
+                                                                    }
+                                                                ]
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
-                                    }
-                                }
+                                    ]
+                                },
+                                "$$group"  # Leave other groups unchanged
                             ]
                         }
                     }
                 }
             }
-        }]
+        }
+    ]
+    result = await users.update_one(
+        {"_id": user["_id"]},
+        pipeline
     )
 
-    if update_result.modified_count == 1:
+    if result.modified_count == 1:
         return {"Result": "success"}
+
+    else:
+        raise HTTPException(status_code=500, detail="Failed to delete task")
 
     # checks
     # check group exists
@@ -333,62 +366,3 @@ async def delete_task(user: dict[str, Any], group_name: str, task_name: str) -> 
 #         {"$pull": {"todo.task_groups.$.tasks": {"_id": task_id}}}
 #     )
 #     return result.modified_count > 0
-
-
-if __name__ == '__main__':
-    async def m():
-        o_num = 0
-        pprint(await users.update_one(
-            {
-                "_id": ObjectId("67a3d2c410c3b825abd131d8"),
-                "todo.title": "grou1",
-            },
-            [{
-                "$set": {
-                    "todo.tasks": {
-                        "$map": {
-                            "input": "$todo.tasks",
-                            "as": "task",
-                            "in": {
-                                "$mergeObjects": [
-                                    "$$task",
-                                    {
-                                        "order_num": {
-                                            "$cond": {
-                                                "if": {"$gt": ["$$task.order_num", o_num]},
-                                                "then": {"$subtract": ["$$task.order_num", 1]},
-                                                "else": "$$task.order_num"
-                                            }
-                                        }
-                                    }
-                                ]
-                            }
-                        }
-                    }
-                }
-            }]
-        ))
-        # pprint(
-        #     await users.find(
-        #         {
-        #             "_id": ObjectId("67a3d2c410c3b825abd131d8"),
-        #             "todo.title": "grou1",
-        #             "todo.tasks.title": "grou1",
-        #         },
-        #         {
-        #             {"todo": 1}
-        #         }
-        #     )
-        # )
-
-        # pprint(await users.update_one(
-        #     {"_id": ObjectId("67a3d2c410c3b825abd131d8"),
-        #      "todo.title": "grou1",
-        #      },
-        #     {
-        #         "$pull": {"todo.$.tasks": {"title": "grou1"}}
-        #     }
-        # ))
-
-
-    asyncio.run(m())
