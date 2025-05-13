@@ -6,34 +6,36 @@ from pymongo.results import UpdateResult
 
 from app.database import users
 
-
-# Task Group CRUD
 async def create_task_group(user: dict[str, Any], group_name: str):
     """
-    Creates a new task group with auto-incremented order_num.
-    Returns MongoDB UpdateResult.
+    Создает новую группу задач с автоматически увеличенным order_num.
+    Возвращает результат обновления MongoDB.
+
+    Args:
+        user (dict[str, Any]): Информация о пользователе.
+        group_name (str): Название новой группы задач.
+
+    Returns:
+        dict: Результат операции с идентификатором созданной группы задач.
+
+    Raises:
+        HTTPException: Если имя группы не является строкой или уже существует.
     """
-    # Validate input
     if not group_name or not isinstance(group_name, str):
         raise HTTPException(status_code=400, detail="Group name must be a non-empty string")
 
-    # Check if group already exists
     if get_task_group(user, group_name) is not None:
         raise HTTPException(status_code=409, detail=f"Task group '{group_name}' already exists")
 
-    # Generate new ObjectId for the task group
     new_group_id = ObjectId()
 
-    # Step 1: Find the current maximum order_num
     user_doc = await users.find_one({"_id": user["_id"]}, {"todo.order_num": 1})
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Calculate the new order_num
     max_order_num = max([t.get("order_num", 0) for t in user_doc.get("todo", [])] or [0])
     new_order_num = max_order_num + 1
 
-    # Step 2: Add the new task group using $push
     result: UpdateResult = await users.update_one(
         {"_id": user["_id"]},
         {
@@ -48,49 +50,59 @@ async def create_task_group(user: dict[str, Any], group_name: str):
         }
     )
 
-    # Check if the update was successful
     if result.modified_count == 1:
         return {"Result": "success", "task_group_id": str(new_group_id)}
     else:
         raise HTTPException(status_code=500, detail="Failed to create task group")
 
-
 def get_task(task_group: dict[str, Any], task_name: str) -> dict[str, Any]:
-    return next(
-        (t for t in task_group["tasks"] if t["title"] == task_name), None
-    )
+    """
+    Получает задачу из группы задач по названию.
 
+    Args:
+        task_group (dict[str, Any]): Группа задач.
+        task_name (str): Название задачи.
+
+    Returns:
+        dict[str, Any]: Задача, если найдена, иначе None.
+    """
+    for task in task_group["tasks"]:
+        if task["title"] == task_name:
+            return task
+    return None
 
 def get_task_group(user, group_name):
-    return next(
-        (g for g in user["todo"] if g["title"] == group_name),
-        None
-    )
+    """
+    Получает группу задач пользователя по названию.
 
+    Args:
+        user (dict[str, Any]): Информация о пользователе.
+        group_name (str): Название группы задач.
 
-# async def update_task_group(user: dict[str, Any], group_id, group_data):
-#     update_data = {
-#         f"todo.task_groups.$.{k}": v
-#         for k, v in group_data.dict(exclude_unset=True).items()
-#     }
-#     update_data["todo.task_groups.$.updated_at"] = datetime.now()
-#
-#     result = await users.update_one(
-#         {"_id": user["_id"], "todo.task_groups._id": group_id},
-#         {"$set": update_data}
-#     )
-#     if result.modified_count == 0:
-#         return None
-#     return await get_task_group(user, group_id)
-
+    Returns:
+        dict[str, Any]: Группа задач, если найдена, иначе None.
+    """
+    for group in user["todo"]:
+        if group["title"] == group_name:
+            return group
+    return None
 
 async def delete_task_group(user: dict[str, Any], group_name: str) -> Dict[str, str]:
     """
-    Deletes a task group by name and updates order numbers for remaining groups.
-    Returns success message or raises appropriate HTTPException.
+    Удаляет группу задач по названию и обновляет порядковые номера оставшихся групп.
+    Возвращает сообщение об успехе или выбрасывает соответствующее исключение HTTPException.
+
+    Args:
+        user (dict[str, Any]): Информация о пользователе.
+        group_name (str): Название группы задач для удаления.
+
+    Returns:
+        dict: Сообщение об успешном удалении.
+
+    Raises:
+        HTTPException: Если группа не найдена или операция не удалась.
     """
     try:
-        # 1. Find the group to get its order number
         user_doc = await users.find_one(
             {"_id": user["_id"], "todo.title": group_name},
             {"todo.$": 1}
@@ -101,7 +113,6 @@ async def delete_task_group(user: dict[str, Any], group_name: str) -> Dict[str, 
 
         deleted_order = user_doc["todo"][0]["order_num"]
 
-        # 2. Remove the group
         delete_result = await users.update_one(
             {"_id": user["_id"]},
             {"$pull": {"todo": {"title": group_name}}}
@@ -110,95 +121,90 @@ async def delete_task_group(user: dict[str, Any], group_name: str) -> Dict[str, 
         if delete_result.modified_count != 1:
             raise HTTPException(status_code=404, detail="Group not found or already deleted")
 
-        # 3. Update order numbers for groups with higher order
+        user_groups = await users.find_one({"_id": user["_id"]}, {"todo": 1})
+
+        updated_todo = []
+        for group in user_groups["todo"]:
+            if group["order_num"] > deleted_order:
+                group["order_num"] -= 1
+            updated_todo.append(group)
+
         update_result = await users.update_one(
             {"_id": user["_id"]},
-            [{
-                "$set": {
-                    "todo": {
-                        "$map": {
-                            "input": "$todo",
-                            "as": "group",
-                            "in": {
-                                "$mergeObjects": [
-                                    "$$group",
-                                    {
-                                        "order_num": {
-                                            "$cond": {
-                                                "if": {"$gt": ["$$group.order_num", deleted_order]},
-                                                "then": {"$subtract": ["$$group.order_num", 1]},
-                                                "else": "$$group.order_num"
-                                            }
-                                        }
-                                    }
-                                ]
-                            }
-                        }
-                    }
-                }
-            }]
+            {"$set": {"todo": updated_todo}}
         )
 
         if update_result.modified_count == 1:
             return {"Result": "success"}
         else:
-            raise HTTPException(status_code=500, detail="Failed to create task group")
+            raise HTTPException(status_code=500, detail="Failed to update task groups order")
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {str(e)}")
 
-
 async def rename_task_group(user: dict[str, Any], old_group_name: str, new_group_name: str) -> Dict[str, str]:
     """
-    Renames a task group atomically while ensuring:
-    - Old group exists
-    - New name isn't taken
-    - Proper error handling
+    Переименовывает группу задач, обеспечивая:
+    - Существование старой группы
+    - Новое имя не занято
+    - Корректная обработка ошибок
+
+    Args:
+        user (dict[str, Any]): Информация о пользователе.
+        old_group_name (str): Текущее название группы задач.
+        new_group_name (str): Новое название группы задач.
+
+    Returns:
+        dict: Сообщение об успешном переименовании.
+
+    Raises:
+        HTTPException: Если имена пустые, совпадают или операция не удалась.
     """
-    # Validate input
     if not old_group_name or not new_group_name:
         raise HTTPException(status_code=400, detail="Group names cannot be empty")
     if old_group_name == new_group_name:
         raise HTTPException(status_code=400, detail="New name must be different from old name")
 
     try:
-        # Atomic update operation
-        result = await users.update_one(
-            {
-                "_id": user["_id"],
-                "$and": [
-                    {"todo.title": old_group_name},
-                    {"todo.title": {"$ne": new_group_name}}
-                ]
-            },
-            {"$set": {"todo.$[elem].title": new_group_name}},
-            array_filters=[{"elem.title": old_group_name}]
-        )
-
-        # Handle update results
-        if result.modified_count == 1:
-            return {"Result": "success"}
-
-        # Determine why update failed
-        group_exists = await users.find_one({
+        existing_group = await users.find_one({
             "_id": user["_id"],
             "todo.title": new_group_name
         })
 
-        if group_exists:
-            raise HTTPException(status_code=409,
-                                detail=f"Group '{new_group_name}' already exists")
+        if existing_group:
+            raise HTTPException(status_code=409, detail=f"Group '{new_group_name}' already exists")
+
+        result = await users.update_one(
+            {"_id": user["_id"], "todo.title": old_group_name},
+            {"$set": {"todo.$.title": new_group_name}}
+        )
+
+        if result.modified_count == 1:
+            return {"Result": "success"}
         else:
-            raise HTTPException(status_code=404,
-                                detail=f"Group '{old_group_name}' not found")
+            raise HTTPException(status_code=404, detail=f"Group '{old_group_name}' not found")
 
     except Exception as e:
-        raise HTTPException(status_code=500,
-                            detail=f"Database error: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 async def create_task(user: dict[str, Any], group_name: str, task_name: str, description: str) -> Dict[str, str]:
+    """
+    Создает новую задачу в указанной группе задач.
+
+    Args:
+        user (dict[str, Any]): Информация о пользователе.
+        group_name (str): Название группы задач.
+        task_name (str): Название задачи.
+        description (str): Описание задачи.
+
+    Returns:
+        dict: Сообщение об успешном создании задачи с идентификатором задачи.
+
+    Raises:
+        HTTPException: Если название задачи не является строкой или задача уже существует.
+    """
     if not task_name or not isinstance(task_name, str):
         raise HTTPException(status_code=400, detail="Task name must be a non-empty string")
 
@@ -206,9 +212,8 @@ async def create_task(user: dict[str, Any], group_name: str, task_name: str, des
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # Check if task already exists
     if get_task(group, task_name) is not None:
-        raise HTTPException(status_code=409, detail=f"Task group '{group_name}' already exists")
+        raise HTTPException(status_code=409, detail=f"Task '{task_name}' already exists")
 
     new_task_id = ObjectId()
 
@@ -228,14 +233,26 @@ async def create_task(user: dict[str, Any], group_name: str, task_name: str, des
         }
     )
 
-    # Check if the update was successful
     if result.modified_count == 1:
         return {"Result": "success", "task_id": str(new_task_id)}
     else:
         raise HTTPException(status_code=500, detail="Failed to create task")
 
-
 async def delete_task(user: dict[str, Any], group_name: str, task_name: str) -> Dict[str, str]:
+    """
+    Удаляет задачу из указанной группы задач и обновляет порядковые номера оставшихся задач.
+
+    Args:
+        user (dict[str, Any]): Информация о пользователе.
+        group_name (str): Название группы задач.
+        task_name (str): Название задачи для удаления.
+
+    Returns:
+        dict: Сообщение об успешном удалении задачи.
+
+    Raises:
+        HTTPException: Если группа или задача не найдены или операция не удалась.
+    """
     task_group = get_task_group(user, group_name)
     if task_group is None:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -244,125 +261,27 @@ async def delete_task(user: dict[str, Any], group_name: str, task_name: str) -> 
     if task_to_delete is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    pipeline = [
-        {
-            "$set": {
-                "todo": {
-                    "$map": {
-                        "input": "$todo",
-                        "as": "group",
-                        "in": {
-                            "$cond": [
-                                {"$eq": ["$$group.title", group_name]},
-                                {
-                                    "$mergeObjects": [
-                                        "$$group",
-                                        {
-                                            "tasks": {
-                                                "$let": {
-                                                    "vars": {
-                                                        "deletedTask": {
-                                                            "$arrayElemAt": [
-                                                                {
-                                                                    "$filter": {
-                                                                        "input": "$$group.tasks",
-                                                                        "as": "task",
-                                                                        "cond": {"$eq": ["$$task.title", task_name]}
-                                                                    }
-                                                                },
-                                                                0
-                                                            ]
-                                                        },
-                                                        "remainingTasks": {
-                                                            "$filter": {
-                                                                "input": "$$group.tasks",
-                                                                "as": "task",
-                                                                "cond": {"$ne": ["$$task.title", task_name]}
-                                                            }
-                                                        }
-                                                    },
-                                                    "in": {
-                                                        "$map": {
-                                                            "input": "$$remainingTasks",
-                                                            "as": "t",
-                                                            "in": {
-                                                                "$mergeObjects": [
-                                                                    "$$t",
-                                                                    {
-                                                                        "order_num": {
-                                                                            "$cond": [
-                                                                                {"$gt": ["$$t.order_num",
-                                                                                         "$$deletedTask.order_num"]},
-                                                                                {"$subtract": ["$$t.order_num", 1]},
-                                                                                "$$t.order_num"
-                                                                            ]
-                                                                        }
-                                                                    }
-                                                                ]
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    ]
-                                },
-                                "$$group"  # Leave other groups unchanged
-                            ]
-                        }
-                    }
-                }
-            }
-        }
-    ]
     result = await users.update_one(
-        {"_id": user["_id"]},
-        pipeline
+        {"_id": user["_id"], "todo.title": group_name},
+        {"$pull": {"todo.$.tasks": {"title": task_name}}}
     )
 
     if result.modified_count == 1:
-        return {"Result": "success"}
+        updated_tasks = []
+        for task in task_group["tasks"]:
+            if task["title"] != task_name:
+                if task["order_num"] > task_to_delete["order_num"]:
+                    task["order_num"] -= 1
+                updated_tasks.append(task)
 
+        update_result = await users.update_one(
+            {"_id": user["_id"], "todo.title": group_name},
+            {"$set": {"todo.$.tasks": updated_tasks}}
+        )
+
+        if update_result.modified_count == 1:
+            return {"Result": "success"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update tasks order")
     else:
         raise HTTPException(status_code=500, detail="Failed to delete task")
-
-    # checks
-    # check group exists
-
-    # remove task
-    # if modified_count != 0 then raise exception
-
-    # update order nums of upper tasks
-
-
-# async def get_task(user, group_id, task_id):
-#     group = await get_task_group(user, group_id)
-#     if not group:
-#         return None
-#     return next((t for t in group["tasks"] if t["_id"] == task_id), None)
-#
-#
-# async def update_task(user, group_id, task_id, task_data):
-#     update_data = {
-#         f"todo.task_groups.$[group].tasks.$[task].{k}": v
-#         for k, v in task_data.dict(exclude_unset=True).items()
-#     }
-#     update_data["todo.task_groups.$[group].tasks.$[task].updated_at"] = datetime.now()
-#
-#     result = await users.update_one(
-#         {"_id": user["_id"], "todo.task_groups._id": group_id},
-#         {"$set": update_data},
-#         array_filters=[
-#             {"group._id": group_id},
-#             {"task._id": task_id}
-#         ]
-#     )
-#     return result.modified_count > 0
-#
-#
-# async def delete_task(user, group_id, task_id):
-#     result = await users.update_one(
-#         {"_id": user["_id"], "todo.task_groups._id": group_id},
-#         {"$pull": {"todo.task_groups.$.tasks": {"_id": task_id}}}
-#     )
-#     return result.modified_count > 0
