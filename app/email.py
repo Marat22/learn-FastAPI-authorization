@@ -15,13 +15,18 @@ if not all((MAIL, MAIL_PASSWORD, SMTP_SERVER)):
         f"SET ALL .env variables: {MAIL=}, {MAIL_PASSWORD=}, {SMTP_SERVER=}"
     )
 
-
 def send_update_password_email(email: EmailStr, reset_url: str):
-    msg = MIMEText(f"""Click the link to reset your password: {reset_url}
+    """Отправляет письмо со ссылкой для сброса пароля пользователя.
 
-    This link will expire in 15 minutes.""")
+    Args:
+        email (EmailStr): Адрес электронной почты пользователя.
+        reset_url (str): URL для сброса пароля.
+    """
+    msg = MIMEText(f"""Нажмите на ссылку, чтобы сбросить ваш пароль: {reset_url}
 
-    msg["Subject"] = "Password Reset Request"
+    Эта ссылка истечет через 15 минут.""")
+
+    msg["Subject"] = "Запрос на сброс пароля"
     msg["From"] = MAIL
     msg["To"] = email
 
@@ -29,10 +34,15 @@ def send_update_password_email(email: EmailStr, reset_url: str):
         server.login(MAIL.split("@")[0], MAIL_PASSWORD)
         server.sendmail(MAIL, [str(email)], msg.as_string())
 
-
 def send_confirmation_email(email: EmailStr, token_url: str):
-    msg = MIMEText(f"Click the link to confirm your email: {token_url}")
-    msg["Subject"] = "Confirm your email"
+    """Отправляет письмо со ссылкой для подтверждения электронной почты пользователя.
+
+    Args:
+        email (EmailStr): Адрес электронной почты пользователя.
+        token_url (str): URL для подтверждения электронной почты.
+    """
+    msg = MIMEText(f"Нажмите на ссылку, чтобы подтвердить вашу электронную почту: {token_url}")
+    msg["Subject"] = "Подтвердите вашу электронную почту"
     msg["From"] = MAIL
     msg["To"] = email
 
