@@ -5,7 +5,14 @@ from pymongo import AsyncMongoClient
 
 load_dotenv()
 
-client = AsyncMongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017/"))
+client = AsyncMongoClient(
+    host="mongo",
+    port=27017,
+    username=os.getenv("MONGO_INITDB_ROOT_USERNAME"),
+    password=os.getenv("MONGO_INITDB_ROOT_PASSWORD"),
+    authSource="admin"
+)
+
 db = client.todo_db
 users = db.users
 
