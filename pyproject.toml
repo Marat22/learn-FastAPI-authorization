@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastapi-pet-project"
+version = "0.1.0"
+description = "learn authorization"
+authors = [{name = "Marat", email = "maratsaifutdinov22@gmail.com"}]
+readme = "README.md"
+requires-python = ">=3.11"
