@@ -124,7 +124,12 @@ def get_task(group_name: str, task_name: str, user=Depends(get_current_user)):
         HTTPException: Если задача не найдена.
     """
     task_group = crud.get_task_group(user, group_name)
-    return crud.get_task(task_group, task_name)
+    if task_group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    task = crud.get_task(task_group, task_name)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 @tasks_router.delete("/{group_name}/{task_name}")
 async def delete_task(group_name: str, task_name: str, user=Depends(get_current_user)):
